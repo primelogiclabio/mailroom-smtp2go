@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"
+         child.project.url.inherit.append.path="false">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.primelogiclab.mailroom</groupId>
+        <artifactId>mailroom-parent</artifactId>
+        <version>0.3.0</version>
+        <relativePath/>
+    </parent>
+
+    <!-- Not mailroom-smtp2go, the repo's name: the Java 21 module has that artifactId. -->
+    <artifactId>mailroom-smtp2go-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>mailroom-smtp2go-parent</name>
+    <description>Unofficial SMTP2GO API transport for mailroom: build parent of the Java 21 and Java 8 modules.</description>
+    <url>https://github.com/primelogiclabio/mailroom-smtp2go</url>
+
+    <scm child.scm.connection.inherit.append.path="false"
+         child.scm.developerConnection.inherit.append.path="false"
+         child.scm.url.inherit.append.path="false">
+        <connection>scm:git:https://github.com/primelogiclabio/mailroom-smtp2go.git</connection>
+        <developerConnection>scm:git:https://github.com/primelogiclabio/mailroom-smtp2go.git</developerConnection>
+        <url>https://github.com/primelogiclabio/mailroom-smtp2go</url>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub</system>
+        <url>https://github.com/primelogiclabio/mailroom-smtp2go/issues</url>
+    </issueManagement>
+
+    <modules>
+        <!-- The Java 21 set: no java8-set file, so mailroom-parent builds it for Java 21. -->
+        <module>mailroom-smtp2go</module>
+        <!-- The Java 8 set: a java8-set file next to its pom.xml. -->
+        <module>mailroom-smtp2go-java8</module>
+    </modules>
+
+    <!-- Maven reads the parent before anything it declares, so these entries must be here too. -->
+    <repositories>
+        <repository>
+            <id>primelogiclab-releases</id>
+            <url>https://repo.primelogiclab.io/releases</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+        <repository>
+            <id>primelogiclab-snapshots</id>
+            <url>https://repo.primelogiclab.io/snapshots</url>
+            <releases><enabled>false</enabled></releases>
+            <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+    </repositories>
+
+    <properties>
+        <!-- The mailroom repo's modules: core, http and tck, in both sets. -->
+        <mailroom.version>0.1.0-SNAPSHOT</mailroom.version>
+        <build-helper.version>3.8.0</build-helper.version>
+        <!-- javadoc fails on a package with only package-info.java; remove this with G-1's first public class. -->
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.primelogiclab.mailroom</groupId>
+                <artifactId>mailroom-core</artifactId>
+                <version>${mailroom.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.primelogiclab.mailroom</groupId>
+                <artifactId>mailroom-http</artifactId>
+                <version>${mailroom.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.primelogiclab.mailroom</groupId>
+                <artifactId>mailroom-tck</artifactId>
+                <version>${mailroom.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.primelogiclab.mailroom</groupId>
+                <artifactId>mailroom-core-java8</artifactId>
+                <version>${mailroom.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.primelogiclab.mailroom</groupId>
+                <artifactId>mailroom-http-java8</artifactId>
+                <version>${mailroom.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.primelogiclab.mailroom</groupId>
+                <artifactId>mailroom-tck-java8</artifactId>
+                <version>${mailroom.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <!-- Tests both Java sets run: shared-tests/java and shared-tests/resources (the SMTP2GO fixtures).
+                     Each module lists this plugin in its own build. -->
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>build-helper-maven-plugin</artifactId>
+                    <version>${build-helper.version}</version>
+                    <executions>
+                        <execution>
+                            <id>add-shared-tests</id>
+                            <phase>generate-test-sources</phase>
+                            <goals>
+                                <goal>add-test-source</goal>
+                            </goals>
+                            <configuration>
+                                <sources>
+                                    <source>${project.basedir}/../shared-tests/java</source>
+                                </sources>
+                            </configuration>
+                        </execution>
+                        <execution>
+                            <id>add-shared-test-resources</id>
+                            <phase>generate-test-resources</phase>
+                            <goals>
+                                <goal>add-test-resource</goal>
+                            </goals>
+                            <configuration>
+                                <resources>
+                                    <resource>
+                                        <directory>${project.basedir}/../shared-tests/resources</directory>
+                                    </resource>
+                                </resources>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+    <!-- Test libraries for every module; versions come from mailroom-parent. -->
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
