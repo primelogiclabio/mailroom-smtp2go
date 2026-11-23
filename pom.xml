@@ -61,8 +61,6 @@
         <!-- The mailroom repo's modules: core, http and tck, in both sets. -->
         <mailroom.version>0.1.0-SNAPSHOT</mailroom.version>
         <build-helper.version>3.8.0</build-helper.version>
-        <!-- javadoc fails on a package with only package-info.java; remove this with G-1's first public class. -->
-        <maven.javadoc.skip>true</maven.javadoc.skip>
     </properties>
 
     <dependencyManagement>
