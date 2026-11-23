@@ -6,8 +6,24 @@ Unofficial SMTP2GO API transport for [mailroom](https://github.com/primelogiclab
 > **Unofficial.** This project is not affiliated with, endorsed by or supported by SMTP2GO. "SMTP2GO" is a trademark
 > of its owner and is used here only to say which service the library works with.
 
-> **Status:** early development. The modules are empty skeletons; the transport arrives in the next steps, and there
-> is no release yet. Snapshots are published from `main`.
+> **Status:** early development. The transport sends; SMTP2GO's own error codes, size and recipient limits, and
+> template options are still to come, and there is no release yet. Snapshots are published from `main`.
+
+## What it sends
+
+The from address becomes SMTP2GO's `sender`, and To, Cc and Bcc go to `to`, `cc` and `bcc`, with display names. The
+subject and bodies go to `subject`, `text_body` and `html_body`, and attachments go to `attachments`. Inline images go
+to `inlines` under their content id, since SMTP2GO's HTML refers to an inline image as `cid:<filename>`.
+
+Everything else goes in `custom_headers`, in this order:
+
+- reply-to addresses, as a `Reply-To` header;
+- the email's own headers;
+- its tags, as `X-Mailroom-Tags: a, b`;
+- its metadata, as `X-Mailroom-Metadata: {"key":"value"}`, a compact JSON object with non-ASCII escaped.
+
+SMTP2GO's `email_id` becomes the send result's message id. The transport sets no `Message-ID` header, so the one
+SMTP2GO writes is `<E{email_id}@message-id.smtpcorp.com>`.
 
 ## Modules
 
