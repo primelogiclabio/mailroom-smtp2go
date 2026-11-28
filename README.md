@@ -84,12 +84,40 @@ Java 8 set's tests on JDK 8 and the Java 21 set's on JDK 21 and 25.
 ### Test fixtures
 
 `shared-tests/resources/smtp2go/` holds real SMTP2GO payloads, loaded as the test resource `smtp2go/<path>`. Each file
-is a request or response body, byte for byte as SMTP2GO sent it on 21 November 2026, with no trailing newline, apart
+is a request or response body, byte for byte as SMTP2GO sent it on the date given, with no trailing newline, apart
 from sanitized values: email ids became `1ExmNN-FixtureMail-NNNN` and request ids `00000000-0000-4000-8000-…`.
 
 | File | What |
 | --- | --- |
-| `smtp2go/send/send-response.json` | A successful `POST /v3/email/send` response |
+| `smtp2go/send/send-response.json` | A successful `POST /v3/email/send` response, 21 November 2026 |
+| `smtp2go/errors/unknown-api-key.json` | The 400 (`API_EXCEPTION`) for a key SMTP2GO doesn't know, 28 November 2026 |
+| `smtp2go/errors/missing-api-key.json` | The 403 (`INVALID_IN_PAYLOAD`) for a request without a key, 28 November 2026 |
+
+### Live smoke test
+
+`Smtp2GoLiveTest` sends real email through SMTP2GO. It runs only when `SMTP2GO_API_KEY`, `SMTP2GO_TEST_SENDER` and
+`SMTP2GO_TEST_RECIPIENT` are all set, so a plain `./mvnw verify` skips it. Each run, on each set:
+
+- sends one email to the test recipient, from `mailroom-smtp2go live test` with a subject starting
+  `[mailroom-smtp2go live test]` and a body that says what it is and links the run, with non-ASCII in the subject and
+  a header; then waits up to 3 minutes for the Activity API to report it `delivered`, and prints the delivered headers;
+- sends a template email when `SMTP2GO_TEST_TEMPLATE_ID` is set, with `{"name": "café ✓"}` as its data;
+- checks SMTP2GO's answers to a made-up key, an unverified sender and, when `SMTP2GO_TEST_RESTRICTED_KEY` is set, a key
+  without `/email/send`.
+
+What it prints has every address masked. The key needs `/email/send` and `/activity/search` enabled, and the sender
+must be verified in SMTP2GO. `SMTP2GO_REGION` picks `global` (the default), `us`, `eu` or `au`.
+
+The `live` workflow runs it on JDK 21 and JDK 8, by hand from the Actions tab or when a pull request from this
+repository gets the `live` label. It reads the variables above from repository secrets of the same names, and
+`SMTP2GO_REGION` from a repository variable. To run it locally:
+
+```powershell
+$env:SMTP2GO_API_KEY = '<key>'
+$env:SMTP2GO_TEST_SENDER = 'sender@your-verified-domain'
+$env:SMTP2GO_TEST_RECIPIENT = 'you@example.com'
+./mvnw verify -Dtest.jdk=21 -Dtest=Smtp2GoLiveTest '-Dsurefire.failIfNoSpecifiedTests=false'
+```
 
 ## Compatibility
 

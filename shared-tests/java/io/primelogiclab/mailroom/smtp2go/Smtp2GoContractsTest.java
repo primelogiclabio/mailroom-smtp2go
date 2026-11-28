@@ -50,6 +50,10 @@ class Smtp2GoContractsTest {
     private List<FailureCase> failureCases() {
         List<FailureCase> cases = new ArrayList<FailureCase>(HttpFailureCases.standard(server));
         cases.add(HttpFailureCases.readTimeout(server, Duration.ofSeconds(2)));
+        cases.add(answer("unknown key (captured)", StubResponse.status(400).json(fixtureText("smtp2go/errors/"
+                + "unknown-api-key.json")), FailureKind.AUTHENTICATION).status(400));
+        cases.add(answer("no key (captured)", StubResponse.status(403).json(fixtureText("smtp2go/errors/"
+                + "missing-api-key.json")), FailureKind.AUTHENTICATION).status(403));
         cases.add(answer("endpoint not enabled", StubResponse.status(400).json("{\"request_id\":"
                 + "\"00000000-0000-4000-8000-000000000001\",\"data\":{\"error_code\":\""
                 + Smtp2GoTransport.ENDPOINT_PERMISSION_DENIED + "\",\"error\":\"You do not have permission to access "
@@ -172,8 +176,12 @@ class Smtp2GoContractsTest {
     }
 
     private static String success() {
+        return fixtureText("smtp2go/send/send-response.json");
+    }
+
+    static String fixtureText(String path) {
         try {
-            return new String(FixturesTest.fixture("smtp2go/send/send-response.json"), StandardCharsets.UTF_8);
+            return new String(FixturesTest.fixture(path), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }

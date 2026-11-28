@@ -1,0 +1,62 @@
+# The live smoke test: real email through SMTP2GO, one per Java set, delivered and checked through the Activity API.
+# It runs by hand (Actions > live > Run workflow), or when a pull request from this repository gets the "live" label.
+# The secrets are described in the README's "Live smoke test"; the job fails early if a required one is missing.
+name: live
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: live on JDK ${{ matrix.jdk }}
+    # Secrets never reach pull requests from forks; the label alone can't start a run from one either.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'live' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        jdk: ['21', '8']
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      # JDK 8 goes into ~/.m2/toolchains.xml for the Java 8 set; the last one, 21, runs Maven.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+          cache: maven
+      - name: Check the secrets
+        run: |
+          for name in SMTP2GO_API_KEY SMTP2GO_TEST_SENDER SMTP2GO_TEST_RECIPIENT; do
+            if [ -z "${!name}" ]; then echo "::error::the $name secret isn't set"; exit 1; fi
+          done
+        env:
+          SMTP2GO_API_KEY: ${{ secrets.SMTP2GO_API_KEY }}
+          SMTP2GO_TEST_SENDER: ${{ secrets.SMTP2GO_TEST_SENDER }}
+          SMTP2GO_TEST_RECIPIENT: ${{ secrets.SMTP2GO_TEST_RECIPIENT }}
+      - name: Send through SMTP2GO on JDK ${{ matrix.jdk }}
+        run: >-
+          ./mvnw -B verify -Dtest.jdk=${{ matrix.jdk }} -Dtest=Smtp2GoLiveTest
+          -Dsurefire.failIfNoSpecifiedTests=false
+        env:
+          SMTP2GO_API_KEY: ${{ secrets.SMTP2GO_API_KEY }}
+          SMTP2GO_TEST_SENDER: ${{ secrets.SMTP2GO_TEST_SENDER }}
+          SMTP2GO_TEST_RECIPIENT: ${{ secrets.SMTP2GO_TEST_RECIPIENT }}
+          SMTP2GO_TEST_TEMPLATE_ID: ${{ secrets.SMTP2GO_TEST_TEMPLATE_ID }}
+          SMTP2GO_TEST_RESTRICTED_KEY: ${{ secrets.SMTP2GO_TEST_RESTRICTED_KEY }}
+          SMTP2GO_REGION: ${{ vars.SMTP2GO_REGION }}

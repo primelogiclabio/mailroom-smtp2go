@@ -39,8 +39,9 @@ import java.util.Optional;
  * key is picked up.
  *
  * <p>The precheck holds an email to SMTP2GO's limits: 100 addresses in each recipient list, 50 MB once encoded, and
- * a metadata header that fits on one line. Failures keep SMTP2GO's {@code error_code}. A key without the send
- * endpoint enabled is {@code AUTHENTICATION}, and a 200 that reports the email as failed is {@code REJECTED}.
+ * a metadata header that fits on one line. Failures keep SMTP2GO's {@code error_code}. An unknown key (a 400 with
+ * {@code API_EXCEPTION}) and a key without the send endpoint enabled are {@code AUTHENTICATION}, and a 200 that
+ * reports the email as failed is {@code REJECTED}.
  *
  * <p>Thread-safe. {@link #close()} closes the HTTP engine, found with {@link HttpEngines#load()}.
  *
@@ -52,6 +53,9 @@ public final class Smtp2GoTransport implements MailTransport {
 
     /** SMTP2GO's code for an API key that doesn't have the endpoint enabled. */
     static final String ENDPOINT_PERMISSION_DENIED = "E_ApiResponseCodes.ENDPOINT_PERMISSION_DENIED";
+
+    /** SMTP2GO's generic error code, which an unknown API key also gets. */
+    static final String API_EXCEPTION = "E_ApiResponseCodes.API_EXCEPTION";
 
     private static final Duration MIN_TIMEOUT = Duration.ofMillis(1);
     private static final Duration MAX_TIMEOUT = Duration.ofMillis(Integer.MAX_VALUE);
@@ -68,6 +72,7 @@ public final class Smtp2GoTransport implements MailTransport {
                 Optional<String> code = body.get("data").get("error_code").asString();
                 return code.isPresent() ? code : body.get("error_code").asString();
             })
+            .rule(Smtp2GoTransport::unknownKey)
             .kind(400, ENDPOINT_PERMISSION_DENIED, FailureKind.AUTHENTICATION)
             .build();
 
@@ -250,6 +255,24 @@ public final class Smtp2GoTransport implements MailTransport {
             return timeout;
         }
         return left.get().compareTo(MIN_TIMEOUT) < 0 ? MIN_TIMEOUT : left.get();
+    }
+
+    /**
+     * An unknown key: SMTP2GO answers 400 with its generic {@code API_EXCEPTION}, and only the message, "An API User
+     * matching the passed 'api_key' was not found", tells it apart.
+     */
+    private static Optional<FailureKind> unknownKey(HttpResponse response, Optional<JsonValue> body,
+            Optional<String> code) {
+        if (response.statusCode() != 400 || !code.isPresent() || !code.get().equals(API_EXCEPTION)
+                || !body.isPresent()) {
+            return Optional.empty();
+        }
+        Optional<String> error = body.get().get("data").get("error").asString();
+        if (!error.isPresent()) {
+            error = body.get().get("error").asString();
+        }
+        return error.isPresent() && error.get().contains("'api_key'") ? Optional.of(FailureKind.AUTHENTICATION)
+                : Optional.<FailureKind>empty();
     }
 
     /** SMTP2GO's error as a failure; a rate limit that says nothing about waiting gets SMTP2GO's pause. */
