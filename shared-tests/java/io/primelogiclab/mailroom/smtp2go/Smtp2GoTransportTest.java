@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.primelogiclab.mailroom.Email;
+import io.primelogiclab.mailroom.EmailExtension;
 import io.primelogiclab.mailroom.FailureKind;
 import io.primelogiclab.mailroom.Secret;
 import io.primelogiclab.mailroom.SendFailedException;
@@ -139,6 +140,31 @@ class Smtp2GoTransportTest {
     }
 
     @Test
+    void anEmailWithoutContentOrATemplateIsRejectedBeforeAnyRequest() {
+        Email noContent = Email.builder().from("sender@example.com").to("to@example.com").with(new OtherTemplate())
+                .build();
+        Email subjectOnly = Email.builder().from("sender@example.com").to("to@example.com").subject("Hi")
+                .with(new OtherTemplate()).build();
+
+        String reason = "without an Smtp2GoOptions template, SMTP2GO needs a subject and a text or HTML body";
+        assertThat(transport.precheck(noContent).reason()).hasValue(reason);
+        assertThat(transport.precheck(subjectOnly).reason()).hasValue(reason);
+        assertThatThrownBy(() -> transport.send(noContent, CONTEXT))
+                .isInstanceOfSatisfying(SendFailedException.class,
+                        e -> assertThat(e.kind()).isEqualTo(FailureKind.INVALID_MESSAGE));
+        assertThat(server.requestCount()).isZero();
+    }
+
+    @Test
+    void understandsItsOptionsAndTakesATemplateEmail() {
+        Email template = Email.builder().from("sender@example.com").to("to@example.com")
+                .with(Smtp2GoOptions.builder().templateId("welcome").build()).build();
+
+        assertThat(transport.capabilities().understands(Smtp2GoOptions.class)).isTrue();
+        assertThat(transport.precheck(template).passed()).isTrue();
+    }
+
+    @Test
     void aKeyThatCantBeReadIsAnAuthenticationFailure() {
         Supplier<String> missing = () -> null;
         try (Smtp2GoTransport noKey = new Smtp2GoTransport("primary", server.baseUri(), Secret.of(missing),
@@ -180,5 +206,24 @@ class Smtp2GoTransportTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> Smtp2GoTransport.builder().connectTimeout(Duration.ofDays(30)))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /** Another provider's template: it supplies the content but isn't essential, so the router lets SMTP2GO see it. */
+    static final class OtherTemplate implements EmailExtension {
+
+        @Override
+        public boolean providesContent() {
+            return true;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof OtherTemplate;
+        }
+
+        @Override
+        public int hashCode() {
+            return 1;
+        }
     }
 }

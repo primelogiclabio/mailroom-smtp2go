@@ -7,10 +7,12 @@ import io.primelogiclab.mailroom.http.JsonWriter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Builds the JSON body of {@code POST /v3/email/send} from an email. Fields the email doesn't use are left out, so a
- * template send (G-2) can go without a subject or bodies.
+ * template send can go without a subject or bodies. An {@link Smtp2GoOptions} template adds {@code template_id}, and
+ * {@code template_data} as a JSON object.
  */
 final class Smtp2GoRequest {
 
@@ -37,10 +39,35 @@ final class Smtp2GoRequest {
         json.field("subject", email.subject())
                 .field("text_body", email.text())
                 .field("html_body", email.html());
+        template(json, email);
         headers(json, email);
         parts(json, "attachments", email.attachments(), false);
         parts(json, "inlines", email.attachments(), true);
         return json.toBytes();
+    }
+
+    /**
+     * Returns the id of the email's {@link Smtp2GoOptions} template.
+     *
+     * @param email the email
+     * @return the template id, if the email has one
+     */
+    static Optional<String> templateId(Email email) {
+        Optional<Smtp2GoOptions> options = email.extension(Smtp2GoOptions.class);
+        return options.isPresent() ? options.get().templateId() : Optional.<String>empty();
+    }
+
+    /** The template id, and its data unless there is none; SMTP2GO then ignores the subject and bodies. */
+    private static void template(JsonWriter json, Email email) {
+        Optional<String> id = templateId(email);
+        if (!id.isPresent()) {
+            return;
+        }
+        json.field("template_id", id.get());
+        Map<String, Object> data = email.extension(Smtp2GoOptions.class).get().templateData();
+        if (!data.isEmpty()) {
+            json.value("template_data", data);
+        }
     }
 
     private static void addresses(JsonWriter json, String field, List<Address> addresses) {

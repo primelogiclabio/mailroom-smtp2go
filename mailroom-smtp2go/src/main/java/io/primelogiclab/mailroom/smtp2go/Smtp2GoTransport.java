@@ -34,7 +34,9 @@ import java.util.Optional;
  * <p>The result's message id is SMTP2GO's {@code email_id}. The transport sets no {@code Message-ID} header, so the
  * one SMTP2GO writes is {@code <E}<i>email_id</i>{@code @message-id.smtpcorp.com>}. Tags and metadata travel as the
  * {@code X-Mailroom-Tags} and {@code X-Mailroom-Metadata} headers, and reply-to addresses as a {@code Reply-To}
- * header. The key is read from its {@link Secret} for each request, so a rotated key is picked up.
+ * header. An {@link Smtp2GoOptions} template goes as {@code template_id} and {@code template_data}; an email with
+ * one goes only through SMTP2GO transports. The key is read from its {@link Secret} for each request, so a rotated
+ * key is picked up.
  *
  * <p>Thread-safe. {@link #close()} closes the HTTP engine, found with {@link HttpEngines#load()}.
  *
@@ -50,6 +52,7 @@ public final class Smtp2GoTransport implements MailTransport {
     private static final TransportCapabilities CAPABILITIES = TransportCapabilities.builder()
             .supports(Capability.TEXT, Capability.HTML, Capability.ATTACHMENTS, Capability.INLINE_IMAGES,
                     Capability.CUSTOM_HEADERS, Capability.TAGS, Capability.METADATA, Capability.MESSAGE_ID)
+            .understands(Smtp2GoOptions.class)
             .build();
 
     private static final FailureMapper FAILURES = FailureMapper.builder(PROVIDER_ID)
@@ -113,7 +116,8 @@ public final class Smtp2GoTransport implements MailTransport {
     }
 
     /**
-     * Text and HTML bodies, attachments, inline images, custom headers, tags, metadata, and a message id.
+     * Text and HTML bodies, attachments, inline images, custom headers, tags, metadata, and a message id; understands
+     * {@link Smtp2GoOptions}.
      *
      * @return the capabilities
      * @since 0.1.0
@@ -124,7 +128,8 @@ public final class Smtp2GoTransport implements MailTransport {
     }
 
     /**
-     * Rejects an email without a from address or without a To recipient, which SMTP2GO requires.
+     * Rejects an email without a from address or without a To recipient, which SMTP2GO requires, and one without a
+     * subject or without a body when no {@link Smtp2GoOptions} template supplies them.
      *
      * @param email the email
      * @return the verdict
@@ -195,6 +200,10 @@ public final class Smtp2GoTransport implements MailTransport {
         }
         if (email.to().isEmpty()) {
             return Optional.of("SMTP2GO needs at least one To recipient");
+        }
+        if (Smtp2GoRequest.templateId(email).isEmpty()
+                && (email.subject().isEmpty() || email.text().isEmpty() && email.html().isEmpty())) {
+            return Optional.of("without an Smtp2GoOptions template, SMTP2GO needs a subject and a text or HTML body");
         }
         return Optional.empty();
     }

@@ -11,6 +11,10 @@
  * {@code attachments}, and inline parts to {@code inlines} under their content id, since SMTP2GO's HTML refers to an
  * inline part by its filename. SMTP2GO's {@code email_id} becomes the result's message id.
  *
+ * <p>Templates: {@link io.primelogiclab.mailroom.smtp2go.Smtp2GoOptions} names an SMTP2GO template, sent as
+ * {@code template_id}, and its data, sent as the {@code template_data} object. An email with a template needs no
+ * subject or bodies, and goes only through SMTP2GO transports.
+ *
  * <p>Unofficial: not affiliated with, endorsed by or supported by SMTP2GO.
  */
 package io.primelogiclab.mailroom.smtp2go;

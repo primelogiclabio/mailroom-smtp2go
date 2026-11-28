@@ -7,6 +7,10 @@ All notable changes to mailroom-smtp2go are listed here. The format follows
 
 ### Added
 
+- `Smtp2GoOptions`, for SMTP2GO templates: a template id and its data, sent as `template_id` and the `template_data`
+  object. With a template, the options are essential, so the email goes only through SMTP2GO transports, and they
+  supply the content, so the email needs no subject or bodies. Without one, the precheck now rejects an email that has
+  no subject or no body.
 - `Smtp2GoTransport`, which sends through `POST /v3/email/send` with the key in `X-Smtp2go-Api-Key`, and
   `Smtp2GoTransportProvider` for `type: smtp2go` (keys `api-key`, `region`, `connect-timeout`, `read-timeout`),
   registered for `ServiceLoader`. `Smtp2GoRegion` picks the global, US, EU or AU host. The email's from address,

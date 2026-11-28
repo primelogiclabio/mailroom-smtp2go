@@ -58,7 +58,7 @@
     </repositories>
 
     <properties>
-        <!-- The mailroom repo's modules: core, http and tck, in both sets. -->
+        <!-- The mailroom repo's modules: core, http, test and tck, in both sets. -->
         <mailroom.version>0.1.0-SNAPSHOT</mailroom.version>
         <build-helper.version>3.8.0</build-helper.version>
     </properties>
@@ -82,6 +82,11 @@
             </dependency>
             <dependency>
                 <groupId>io.primelogiclab.mailroom</groupId>
+                <artifactId>mailroom-test</artifactId>
+                <version>${mailroom.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.primelogiclab.mailroom</groupId>
                 <artifactId>mailroom-core-java8</artifactId>
                 <version>${mailroom.version}</version>
             </dependency>
@@ -93,6 +98,11 @@
             <dependency>
                 <groupId>io.primelogiclab.mailroom</groupId>
                 <artifactId>mailroom-tck-java8</artifactId>
+                <version>${mailroom.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.primelogiclab.mailroom</groupId>
+                <artifactId>mailroom-test-java8</artifactId>
                 <version>${mailroom.version}</version>
             </dependency>
         </dependencies>
