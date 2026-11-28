@@ -7,6 +7,12 @@ All notable changes to mailroom-smtp2go are listed here. The format follows
 
 ### Added
 
+- SMTP2GO's errors and limits. An API key without the send endpoint enabled
+  (`E_ApiResponseCodes.ENDPOINT_PERMISSION_DENIED`, read under `data` or at the top level) is `AUTHENTICATION`, a 200
+  that reports the email as failed is `REJECTED`, and a 429 that says nothing about waiting retries after a minute.
+  The precheck rejects more than 100 addresses in the To, Cc or Bcc list, a metadata header longer than one line (998
+  characters), and an email over 50,000,000 bytes once encoded. Passes the TCK's failure, redaction and precheck
+  contracts on both sets.
 - `Smtp2GoOptions`, for SMTP2GO templates: a template id and its data, sent as `template_id` and the `template_data`
   object. With a template, the options are essential, so the email goes only through SMTP2GO transports, and they
   supply the content, so the email needs no subject or bodies. Without one, the precheck now rejects an email that has
