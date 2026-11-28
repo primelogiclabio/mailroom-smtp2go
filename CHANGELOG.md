@@ -7,6 +7,9 @@ All notable changes to mailroom-smtp2go are listed here. The format follows
 
 ### Added
 
+- A live smoke test, `Smtp2GoLiveTest`, and its `live` workflow: real email through SMTP2GO on each set, confirmed
+  `delivered` through the Activity API, plus checks of SMTP2GO's answers to bad keys and an unverified sender. It runs
+  only when its secrets are set, by hand or for a pull request with the `live` label.
 - SMTP2GO's errors and limits. An API key without the send endpoint enabled
   (`E_ApiResponseCodes.ENDPOINT_PERMISSION_DENIED`, read under `data` or at the top level) is `AUTHENTICATION`, a 200
   that reports the email as failed is `REJECTED`, and a 429 that says nothing about waiting retries after a minute.

@@ -91,6 +91,31 @@ from sanitized values: email ids became `1ExmNN-FixtureMail-NNNN` and request id
 | --- | --- |
 | `smtp2go/send/send-response.json` | A successful `POST /v3/email/send` response |
 
+### Live smoke test
+
+`Smtp2GoLiveTest` sends real email through SMTP2GO. It runs only when `SMTP2GO_API_KEY`, `SMTP2GO_TEST_SENDER` and
+`SMTP2GO_TEST_RECIPIENT` are all set, so a plain `./mvnw verify` skips it. Each run, on each set:
+
+- sends one email to the test recipient, with non-ASCII in the sender's display name, the subject and a header, then
+  waits up to 3 minutes for the Activity API to report it `delivered`, and prints the delivered headers;
+- sends a template email when `SMTP2GO_TEST_TEMPLATE_ID` is set, with `{"name": "Zoë"}` as its data;
+- checks SMTP2GO's answers to a made-up key, an unverified sender and, when `SMTP2GO_TEST_RESTRICTED_KEY` is set, a key
+  without `/email/send`.
+
+What it prints has every address masked. The key needs `/email/send` and `/activity/search` enabled, and the sender
+must be verified in SMTP2GO. `SMTP2GO_REGION` picks `global` (the default), `us`, `eu` or `au`.
+
+The `live` workflow runs it on JDK 21 and JDK 8, by hand from the Actions tab or when a pull request from this
+repository gets the `live` label. It reads the variables above from repository secrets of the same names, and
+`SMTP2GO_REGION` from a repository variable. To run it locally:
+
+```powershell
+$env:SMTP2GO_API_KEY = '<key>'
+$env:SMTP2GO_TEST_SENDER = 'sender@your-verified-domain'
+$env:SMTP2GO_TEST_RECIPIENT = 'you@example.com'
+./mvnw verify -Dtest.jdk=21 -Dtest=Smtp2GoLiveTest '-Dsurefire.failIfNoSpecifiedTests=false'
+```
+
 ## Compatibility
 
 | mailroom-smtp2go | Runs on | Built with |
