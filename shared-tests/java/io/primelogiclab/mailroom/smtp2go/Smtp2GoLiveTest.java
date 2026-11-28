@@ -47,12 +47,16 @@ class Smtp2GoLiveTest {
             "spam");
     private static final Pattern ADDRESS = Pattern.compile("[^\\s<>\"',;:()\\[\\]]+@[^\\s<>\"',;:()\\[\\]]+");
     private static final SendContext CONTEXT = SendContext.builder().build();
+    private static final String SUBJECT = "[mailroom-smtp2go live test] ";
 
     private final Smtp2GoRegion region = Smtp2GoRegion.of(env("SMTP2GO_REGION", "global"));
     private final String sender = Address.parse(System.getenv("SMTP2GO_TEST_SENDER")).address();
     private final String recipient = System.getenv("SMTP2GO_TEST_RECIPIENT");
     private final String run = env("GITHUB_RUN_ID", "local");
-    private final String set = "java" + System.getProperty("java.specification.version");
+    private final String set = "Java " + System.getProperty("java.specification.version").replace("1.8", "8") + " set";
+    private final String where = System.getenv("GITHUB_RUN_ID") == null ? "a local run"
+            : env("GITHUB_SERVER_URL", "https://github.com") + "/" + env("GITHUB_REPOSITORY", "") + "/actions/runs/"
+                    + System.getenv("GITHUB_RUN_ID");
 
     private Smtp2GoTransport transport;
     private HttpEngine engine;
@@ -72,14 +76,14 @@ class Smtp2GoLiveTest {
     @Test
     void smtp2goDeliversARealEmail() {
         Email email = Email.builder()
-                .from(Address.of("Mailroom Lïve Tëst", sender))
+                .from(Address.of("mailroom-smtp2go live test", sender))
                 .to(recipient)
-                .subject("mailroom-smtp2go live " + set + " (" + run + "): Grüße ✓")
-                .text("A live smoke test from mailroom-smtp2go. Grüße aus Zürich.")
-                .html("<p>A live smoke test from <b>mailroom-smtp2go</b>. Grüße aus Zürich.</p>")
-                .header("X-Live-Note", "Grüße aus Zürich")
+                .subject(SUBJECT + set + ", run " + run + " ✓ café")
+                .text(explanation("to check delivery") + "\n\nThe ✓ and café check non-ASCII text.")
+                .html("<p>" + explanation("to check delivery") + "</p><p>The ✓ and café check non-ASCII text.</p>")
+                .header("X-Live-Note", "naïve café ✓")
                 .tag("live")
-                .metadata("run", run).metadata("set", set).metadata("note", "Grüße")
+                .metadata("run", run).metadata("set", set).metadata("note", "café")
                 .build();
 
         String id = transport.send(email, CONTEXT).providerMessageId().get();
@@ -97,7 +101,7 @@ class Smtp2GoLiveTest {
     @EnabledIfEnvironmentVariable(named = "SMTP2GO_TEST_TEMPLATE_ID", matches = ".+")
     void aTemplateGoesOutWithItsData() {
         Map<String, Object> data = new LinkedHashMap<String, Object>();
-        data.put("name", "Zoë");
+        data.put("name", "café ✓");
         data.put("run", run);
         data.put("set", set);
         Email email = Email.builder().from(sender).to(recipient)
@@ -150,8 +154,16 @@ class Smtp2GoLiveTest {
     }
 
     private Email plain(String from) {
-        return Email.builder().from(from).to(recipient).subject("mailroom-smtp2go live " + set + " error check")
-                .text("If this arrives, SMTP2GO accepted a send the live test expected it to refuse.").build();
+        return Email.builder().from(from).to(recipient).subject(SUBJECT + set + ", run " + run + ", error check")
+                .text(explanation("to check SMTP2GO's error answers") + " If it arrived, SMTP2GO accepted a send "
+                        + "the test expected it to refuse.")
+                .build();
+    }
+
+    /** Says what the email is, so a test recipient knows it's expected. */
+    private String explanation(String why) {
+        return "This email was sent by the live smoke test of mailroom-smtp2go (github.com/primelogiclabio/"
+                + "mailroom-smtp2go) " + why + " through SMTP2GO, from " + where + ". It needs no action.";
     }
 
     /** Sends with a key that should fail, and reports what came back: the failure, or null if SMTP2GO took it. */

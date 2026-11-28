@@ -98,9 +98,10 @@ from sanitized values: email ids became `1ExmNN-FixtureMail-NNNN` and request id
 `Smtp2GoLiveTest` sends real email through SMTP2GO. It runs only when `SMTP2GO_API_KEY`, `SMTP2GO_TEST_SENDER` and
 `SMTP2GO_TEST_RECIPIENT` are all set, so a plain `./mvnw verify` skips it. Each run, on each set:
 
-- sends one email to the test recipient, with non-ASCII in the sender's display name, the subject and a header, then
-  waits up to 3 minutes for the Activity API to report it `delivered`, and prints the delivered headers;
-- sends a template email when `SMTP2GO_TEST_TEMPLATE_ID` is set, with `{"name": "Zoë"}` as its data;
+- sends one email to the test recipient, from `mailroom-smtp2go live test` with a subject starting
+  `[mailroom-smtp2go live test]` and a body that says what it is and links the run, with non-ASCII in the subject and
+  a header; then waits up to 3 minutes for the Activity API to report it `delivered`, and prints the delivered headers;
+- sends a template email when `SMTP2GO_TEST_TEMPLATE_ID` is set, with `{"name": "café ✓"}` as its data;
 - checks SMTP2GO's answers to a made-up key, an unverified sender and, when `SMTP2GO_TEST_RESTRICTED_KEY` is set, a key
   without `/email/send`.
 
