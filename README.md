@@ -6,8 +6,128 @@ Unofficial SMTP2GO API transport for [mailroom](https://github.com/primelogiclab
 > **Unofficial.** This project is not affiliated with, endorsed by or supported by SMTP2GO. "SMTP2GO" is a trademark
 > of its owner and is used here only to say which service the library works with.
 
-> **Status:** early development. The transport sends; SMTP2GO's own error codes, size and recipient limits, and
-> template options are still to come, and there is no release yet. Snapshots are published from `main`.
+> **Status:** complete for mailroom's first phase (sending, SMTP2GO templates, SMTP2GO's errors and limits, and a
+> live smoke test), but not released yet. Snapshots are published from `main`.
+
+## Quick start
+
+### 1. Add the dependency
+
+Pick the set by the Java your app runs on: `mailroom-smtp2go` on Java 21 or newer, `mailroom-smtp2go-java8` on Java 8
+to 20. It brings `mailroom-core` and `mailroom-http` of the same set with it. The artifacts come from
+`repo.primelogiclab.io`; add its repositories as shown in [Getting the snapshots](#getting-the-snapshots).
+
+```xml
+<dependency>
+    <groupId>io.primelogiclab.mailroom</groupId>
+    <artifactId>mailroom-smtp2go</artifactId>   <!-- or mailroom-smtp2go-java8 -->
+    <version>0.1.0-SNAPSHOT</version>
+</dependency>
+```
+
+### 2. Set up SMTP2GO
+
+- **A verified sender.** SMTP2GO only sends from a verified sender domain or single sender address. An email from any
+  other address fails as `REJECTED`.
+- **An API key** with the `/email/send` endpoint enabled (in the SMTP2GO app, under API Keys). Keep it out of your
+  code and config files, for example in an environment variable such as `SMTP2GO_API_KEY`. A key SMTP2GO doesn't
+  know only shows when you send: the send fails as `AUTHENTICATION`.
+- **The region** your account uses: `global` (the default), `us`, `eu` or `au`.
+
+### 3. Send an email
+
+The same code works on both sets; it's written in Java 8 syntax.
+
+```java
+import io.primelogiclab.mailroom.Email;
+import io.primelogiclab.mailroom.Mailroom;
+import io.primelogiclab.mailroom.Secret;
+import io.primelogiclab.mailroom.SendResult;
+import io.primelogiclab.mailroom.smtp2go.Smtp2GoRegion;
+import io.primelogiclab.mailroom.smtp2go.Smtp2GoTransport;
+
+Smtp2GoTransport smtp2go = Smtp2GoTransport.builder()
+        .apiKey(Secret.env("SMTP2GO_API_KEY"))   // read for each request, never logged
+        .region(Smtp2GoRegion.GLOBAL)            // or US, EU, AU
+        .build();
+
+try (Mailroom mailroom = Mailroom.builder()
+        .defaultFrom("Example App <no-reply@example.com>")   // a sender verified at SMTP2GO
+        .transport(smtp2go)                                   // named "smtp2go"
+        .build()) {
+    Email email = Email.builder()
+            .to("someone@example.com")
+            .subject("Welcome")
+            .text("Thanks for signing up.")
+            .build();
+    SendResult result = mailroom.send(email);
+    String emailId = result.providerMessageId().orElse(null);   // SMTP2GO's email_id
+}
+```
+
+`send` blocks until SMTP2GO takes the email. If it doesn't, `send` throws
+`io.primelogiclab.mailroom.SendFailedException` (unchecked), whose `kind()` is a `FailureKind` (same package) that
+says what went wrong and whether retrying makes sense; see [Errors and limits](#errors-and-limits). `Secret.env`
+reads the variable at each send, so a missing variable fails the send as `AUTHENTICATION`. Closing the mailroom
+closes the transport. Failed sends are also logged through `java.util.logging`, on the logger
+`io.primelogiclab.mailroom`.
+
+### Or configure it with properties
+
+The transport registers itself for `type=smtp2go`, so `Mailroom.fromProperties` finds it on the classpath.
+
+```properties
+# mailroom.properties
+default-from=Example App <no-reply@example.com>
+transports.smtp2go.type=smtp2go
+transports.smtp2go.region=global
+```
+
+```java
+import io.primelogiclab.mailroom.Email;
+import io.primelogiclab.mailroom.Mailroom;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
+
+// in a method that throws IOException; the file is read from the working directory
+Properties file = new Properties();
+try (Reader in = new InputStreamReader(new FileInputStream("mailroom.properties"), StandardCharsets.UTF_8)) {
+    file.load(in);
+}
+Map<String, String> properties = new HashMap<String, String>();
+for (String name : file.stringPropertyNames()) {
+    properties.put(name, file.getProperty(name));
+}
+String apiKey = System.getenv("SMTP2GO_API_KEY");   // the key stays out of the file
+if (apiKey != null) {
+    properties.put("transports.smtp2go.api-key", apiKey);
+}
+
+try (Mailroom mailroom = Mailroom.fromProperties(properties)) {
+    Email email = Email.builder().to("someone@example.com").subject("Welcome").text("Thanks for signing up.").build();
+    mailroom.send(email);
+}
+```
+
+`fromProperties` checks the configuration at once: a missing `api-key`, or a property name it doesn't know, throws
+`io.primelogiclab.mailroom.InvalidConfigException` listing every problem. To read the file from the classpath, such as
+`src/main/resources`, open it with `getClass().getResourceAsStream("/mailroom.properties")` instead.
+
+| Key under `transports.<name>.` | Default | Meaning |
+| --- | --- | --- |
+| `type` | | `smtp2go` |
+| `api-key` | required | API key with `/email/send` enabled |
+| `region` | `global` | `global`, `us`, `eu` or `au` |
+| `connect-timeout` | `10s` | How long to wait for the connection |
+| `read-timeout` | `30s` | How long to wait for SMTP2GO's answer |
+
+The mailroom-wide keys, such as `routing.default` for several transports, are in
+[mailroom's README](https://github.com/primelogiclabio/mailroom#using-it).
 
 ## What it sends
 
@@ -24,6 +144,47 @@ Everything else goes in `custom_headers`, in this order:
 
 SMTP2GO's `email_id` becomes the send result's message id. The transport sets no `Message-ID` header, so the one
 SMTP2GO writes is `<E{email_id}@message-id.smtpcorp.com>`.
+
+## Templates
+
+To send a template stored at SMTP2GO, attach `Smtp2GoOptions` with the template's id and the values it's filled in
+with. The template supplies the subject and bodies, so the email needs none; any it has, SMTP2GO ignores.
+
+```java
+Email welcome = Email.builder()
+        .to("someone@example.com")
+        .with(Smtp2GoOptions.builder()
+                .templateId("welcome")           // the template's id at SMTP2GO
+                .templateData("name", "Ann")     // fills {{ name }}
+                .build())
+        .build();
+```
+
+The data goes as the `template_data` object; values may be text, numbers, booleans, null, and maps and lists of
+those. An email with a template only goes through SMTP2GO transports: if none can take it, `send` throws
+`NoEligibleTransportException` instead of failing over to a provider that would send it empty.
+
+## Errors and limits
+
+Before sending, the transport's precheck rejects an email SMTP2GO would refuse, so the router can try another
+transport instead:
+
+- more than 100 addresses in the To, Cc or Bcc list;
+- more than 50,000,000 bytes once encoded (attachments grow by a third in base64);
+- metadata whose `X-Mailroom-Metadata` header would be longer than one line (998 characters);
+- no from address or no To recipient, or no subject or body without a template.
+
+When SMTP2GO refuses an email, `SendFailedException.kind()` says what happened, and `providerCode()` holds SMTP2GO's
+`error_code`; the error text, which can repeat addresses, is never kept.
+
+| SMTP2GO answers | `kind()` | What mailroom does |
+| --- | --- | --- |
+| 401 or 403, a 400 `API_EXCEPTION` for an unknown key, a 400 `ENDPOINT_PERMISSION_DENIED` | `AUTHENTICATION` | Fails over |
+| 200 that reports the email failed (an unverified sender, for one), 402, 404 | `REJECTED` | Fails over |
+| Other 400s | `INVALID_MESSAGE` | Stops |
+| 429 | `RATE_LIMITED`, retry after its `Retry-After` or 1 minute | Fails over |
+| Other 5xx | `UNAVAILABLE` | Retries once, then fails over |
+| 504, a timeout after sending, a 200 without an `email_id` | `UNKNOWN_OUTCOME` | Stops: the email may have gone out |
 
 ## Modules
 
