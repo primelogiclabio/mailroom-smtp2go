@@ -7,6 +7,9 @@ All notable changes to mailroom-smtp2go are listed here. The format follows
 
 ### Added
 
+- A README quick start for either set: the dependency, what to set up at SMTP2GO, the plain Java builder, and
+  properties-based config through `Mailroom.fromProperties`, with sections on templates and on errors and limits.
+  `ReadmeExamplesTest` runs its examples and checks its key table against the provider.
 - A live smoke test, `Smtp2GoLiveTest`, and its `live` workflow: real email through SMTP2GO on each set, confirmed
   `delivered` through the Activity API, plus checks of SMTP2GO's answers to bad keys and an unverified sender. It runs
   only when its secrets are set, by hand or for a pull request with the `live` label.
