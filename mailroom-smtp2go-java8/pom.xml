@@ -32,6 +32,12 @@
             <artifactId>mailroom-tck-java8</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <!-- ScriptedTransport, for the routing tests. -->
+            <groupId>io.primelogiclab.mailroom</groupId>
+            <artifactId>mailroom-test-java8</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

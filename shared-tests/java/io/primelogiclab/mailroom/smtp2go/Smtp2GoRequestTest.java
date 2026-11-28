@@ -4,9 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.primelogiclab.mailroom.Attachment;
 import io.primelogiclab.mailroom.Email;
-import io.primelogiclab.mailroom.EmailExtension;
 import io.primelogiclab.mailroom.http.JsonValue;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -129,11 +130,54 @@ class Smtp2GoRequestTest {
     }
 
     @Test
-    void anEmailWhoseContentComesFromAnExtensionHasNoSubjectOrBodies() {
+    void aTemplateEmailSendsTheTemplateInsteadOfASubjectOrBodies() {
         JsonValue body = parsed(Email.builder().from("sender@example.com").to("to@example.com")
-                .with(new Template()).build());
+                .with(Smtp2GoOptions.builder().templateId("welcome").templateData("username", "Ann").build())
+                .build());
 
-        assertThat(body.fields().keySet()).containsExactly("sender", "to");
+        assertThat(body.fields().keySet()).containsExactly("sender", "to", "template_id", "template_data");
+        assertThat(body.get("template_id").asString()).hasValue("welcome");
+        assertThat(body.get("template_data").get("username").asString()).hasValue("Ann");
+    }
+
+    @Test
+    void templateDataIsAJsonObjectWithNestedValues() {
+        Map<String, Object> plan = new LinkedHashMap<String, Object>();
+        plan.put("name", "deluxe");
+        plan.put("seats", 5);
+        Map<String, Object> data = new LinkedHashMap<String, Object>();
+        data.put("username", "Zoë 👋");
+        data.put("trial", true);
+        data.put("credit", new BigDecimal("12.50"));
+        data.put("plan", plan);
+        data.put("tags", Arrays.asList("new", "eu"));
+        data.put("coupon", null);
+        Email email = Email.builder().from("sender@example.com").to("to@example.com")
+                .with(Smtp2GoOptions.builder().templateId("welcome").templateData(data).build()).build();
+
+        assertThat(json(email)).endsWith("\"template_id\":\"welcome\",\"template_data\":{\"username\":\"Zoë 👋\","
+                + "\"trial\":true,\"credit\":12.50,\"plan\":{\"name\":\"deluxe\",\"seats\":5},"
+                + "\"tags\":[\"new\",\"eu\"],\"coupon\":null}}");
+    }
+
+    @Test
+    void aTemplateWithoutDataSendsNoTemplateData() {
+        JsonValue body = parsed(Email.builder().from("sender@example.com").to("to@example.com")
+                .with(Smtp2GoOptions.builder().templateId("welcome").build()).build());
+
+        assertThat(body.fields().keySet()).containsExactly("sender", "to", "template_id");
+    }
+
+    @Test
+    void aSubjectAndBodiesStillGoAlongWithATemplate() {
+        JsonValue body = parsed(minimal().with(Smtp2GoOptions.builder().templateId("welcome").build()).build());
+
+        assertThat(body.fields().keySet()).containsExactly("sender", "to", "subject", "text_body", "template_id");
+    }
+
+    @Test
+    void optionsWithoutATemplateAddNothing() {
+        assertThat(json(minimal().with(Smtp2GoOptions.builder().build()).build())).isEqualTo(json(minimal().build()));
     }
 
     private static List<String> strings(JsonValue array) {
@@ -150,29 +194,5 @@ class Smtp2GoRequestTest {
             headers.add(header.get("header").asString().get() + ": " + header.get("value").asString().get());
         }
         return headers;
-    }
-
-    /** Stands in for G-2's template options: an essential extension that supplies the content. */
-    static final class Template implements EmailExtension {
-
-        @Override
-        public boolean essential() {
-            return true;
-        }
-
-        @Override
-        public boolean providesContent() {
-            return true;
-        }
-
-        @Override
-        public boolean equals(Object other) {
-            return other instanceof Template;
-        }
-
-        @Override
-        public int hashCode() {
-            return 1;
-        }
     }
 }
