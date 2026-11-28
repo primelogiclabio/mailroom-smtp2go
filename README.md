@@ -84,12 +84,14 @@ Java 8 set's tests on JDK 8 and the Java 21 set's on JDK 21 and 25.
 ### Test fixtures
 
 `shared-tests/resources/smtp2go/` holds real SMTP2GO payloads, loaded as the test resource `smtp2go/<path>`. Each file
-is a request or response body, byte for byte as SMTP2GO sent it on 21 November 2026, with no trailing newline, apart
+is a request or response body, byte for byte as SMTP2GO sent it on the date given, with no trailing newline, apart
 from sanitized values: email ids became `1ExmNN-FixtureMail-NNNN` and request ids `00000000-0000-4000-8000-…`.
 
 | File | What |
 | --- | --- |
-| `smtp2go/send/send-response.json` | A successful `POST /v3/email/send` response |
+| `smtp2go/send/send-response.json` | A successful `POST /v3/email/send` response, 21 November 2026 |
+| `smtp2go/errors/unknown-api-key.json` | The 400 (`API_EXCEPTION`) for a key SMTP2GO doesn't know, 28 November 2026 |
+| `smtp2go/errors/missing-api-key.json` | The 403 (`INVALID_IN_PAYLOAD`) for a request without a key, 28 November 2026 |
 
 ### Live smoke test
 

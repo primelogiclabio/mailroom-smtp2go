@@ -110,12 +110,14 @@ class Smtp2GoLiveTest {
         awaitDelivery(id);
     }
 
+    /** Runs every check before failing, so one surprise doesn't hide the answers after it. */
     @Test
     void errorAnswersAreClassified() {
         Email plain = plain(sender);
+        List<String> wrong = new ArrayList<String>();
 
-        SendFailedException madeUpKey = failure("made-up key", "api-00000000000000000000000000000000", plain);
-        assertThat(madeUpKey.kind()).isEqualTo(FailureKind.AUTHENTICATION);
+        expect(wrong, "made-up key", failure("made-up key", "api-00000000000000000000000000000000", plain),
+                FailureKind.AUTHENTICATION);
 
         Email unverified = plain("mailroom-live-unverified@example.com");
         try {
@@ -128,10 +130,19 @@ class Smtp2GoLiveTest {
         String restricted = System.getenv("SMTP2GO_TEST_RESTRICTED_KEY");
         if (restricted == null || restricted.isEmpty()) {
             log("key without /email/send: skipped, SMTP2GO_TEST_RESTRICTED_KEY isn't set");
-            return;
+        } else {
+            expect(wrong, "key without /email/send", failure("key without /email/send", restricted, plain),
+                    FailureKind.AUTHENTICATION);
         }
-        SendFailedException noEndpoint = failure("key without /email/send", restricted, plain);
-        assertThat(noEndpoint.kind()).isEqualTo(FailureKind.AUTHENTICATION);
+        assertThat(wrong).as("answers classified differently than expected").isEmpty();
+    }
+
+    private static void expect(List<String> wrong, String what, SendFailedException failure, FailureKind kind) {
+        if (failure == null) {
+            wrong.add(what + ": SMTP2GO accepted the send");
+        } else if (failure.kind() != kind) {
+            wrong.add(what + ": " + failure.kind() + ", expected " + kind);
+        }
     }
 
     private Smtp2GoTransport transport(Secret key) {
@@ -143,12 +154,13 @@ class Smtp2GoLiveTest {
                 .text("If this arrives, SMTP2GO accepted a send the live test expected it to refuse.").build();
     }
 
-    /** Sends with a key that should fail, reports what came back, and returns the failure. */
+    /** Sends with a key that should fail, and reports what came back: the failure, or null if SMTP2GO took it. */
     private SendFailedException failure(String what, String key, Email email) {
         Smtp2GoTransport failing = transport(Secret.of(key));
         try {
-            failing.send(email, CONTEXT);
-            throw new AssertionError(what + ": SMTP2GO accepted the send");
+            String id = failing.send(email, CONTEXT).providerMessageId().get();
+            log(what + ": accepted as " + id);
+            return null;
         } catch (SendFailedException e) {
             report(what, e, key, email);
             return e;

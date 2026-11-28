@@ -133,6 +133,24 @@ class Smtp2GoTransportTest {
     }
 
     @Test
+    void anUnknownKeyIsAnAuthenticationFailureButOtherApiExceptionsAreNot() {
+        server.enqueue(StubResponse.status(400)
+                .json(Smtp2GoContractsTest.fixtureText("smtp2go/errors/unknown-api-key.json")));
+        server.enqueue(StubResponse.status(400).json("{\"data\":{\"error\":\"Something else went wrong\","
+                + "\"error_code\":\"" + Smtp2GoTransport.API_EXCEPTION + "\"}}"));
+
+        assertThatThrownBy(() -> transport.send(email(), CONTEXT))
+                .isInstanceOfSatisfying(SendFailedException.class, e -> {
+                    assertThat(e.kind()).isEqualTo(FailureKind.AUTHENTICATION);
+                    assertThat(e.providerCode()).hasValue(Smtp2GoTransport.API_EXCEPTION);
+                    assertThat(e.getMessage()).doesNotContain("API User");
+                });
+        assertThatThrownBy(() -> transport.send(email(), CONTEXT))
+                .isInstanceOfSatisfying(SendFailedException.class,
+                        e -> assertThat(e.kind()).isEqualTo(FailureKind.INVALID_MESSAGE));
+    }
+
+    @Test
     void aRateLimitWithoutAWaitPausesForAMinute() {
         server.enqueue(StubResponse.status(429).json("{}"));
         server.enqueue(StubResponse.status(429).header("Retry-After", "5").json("{}"));
