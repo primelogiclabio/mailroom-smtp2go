@@ -38,6 +38,10 @@ import java.util.Optional;
  * one goes only through SMTP2GO transports. The key is read from its {@link Secret} for each request, so a rotated
  * key is picked up.
  *
+ * <p>The precheck holds an email to SMTP2GO's limits: 100 addresses in each recipient list, 50 MB once encoded, and
+ * a metadata header that fits on one line. Failures keep SMTP2GO's {@code error_code}. A key without the send
+ * endpoint enabled is {@code AUTHENTICATION}, and a 200 that reports the email as failed is {@code REJECTED}.
+ *
  * <p>Thread-safe. {@link #close()} closes the HTTP engine, found with {@link HttpEngines#load()}.
  *
  * @since 0.1.0
@@ -46,6 +50,9 @@ public final class Smtp2GoTransport implements MailTransport {
 
     static final String PROVIDER_ID = "smtp2go";
 
+    /** SMTP2GO's code for an API key that doesn't have the endpoint enabled. */
+    static final String ENDPOINT_PERMISSION_DENIED = "E_ApiResponseCodes.ENDPOINT_PERMISSION_DENIED";
+
     private static final Duration MIN_TIMEOUT = Duration.ofMillis(1);
     private static final Duration MAX_TIMEOUT = Duration.ofMillis(Integer.MAX_VALUE);
 
@@ -53,10 +60,13 @@ public final class Smtp2GoTransport implements MailTransport {
             .supports(Capability.TEXT, Capability.HTML, Capability.ATTACHMENTS, Capability.INLINE_IMAGES,
                     Capability.CUSTOM_HEADERS, Capability.TAGS, Capability.METADATA, Capability.MESSAGE_ID)
             .understands(Smtp2GoOptions.class)
+            .maxMessageSize(Smtp2GoLimits.MAX_MESSAGE_SIZE)
             .build();
 
     private static final FailureMapper FAILURES = FailureMapper.builder(PROVIDER_ID)
-            .providerCode(body -> body.get("data").get("error_code").asString())
+            .providerCode(body -> body.get("data").get("error_code").asString()
+                    .or(() -> body.get("error_code").asString()))
+            .kind(400, ENDPOINT_PERMISSION_DENIED, FailureKind.AUTHENTICATION)
             .build();
 
     private final String name;
@@ -117,7 +127,7 @@ public final class Smtp2GoTransport implements MailTransport {
 
     /**
      * Text and HTML bodies, attachments, inline images, custom headers, tags, metadata, and a message id; understands
-     * {@link Smtp2GoOptions}.
+     * {@link Smtp2GoOptions}; at most 50,000,000 bytes.
      *
      * @return the capabilities
      * @since 0.1.0
@@ -128,8 +138,10 @@ public final class Smtp2GoTransport implements MailTransport {
     }
 
     /**
-     * Rejects an email without a from address or without a To recipient, which SMTP2GO requires, and one without a
-     * subject or without a body when no {@link Smtp2GoOptions} template supplies them.
+     * Rejects an email without a from address or without a To recipient, which SMTP2GO requires; one without a
+     * subject or without a body when no {@link Smtp2GoOptions} template supplies them; and one over SMTP2GO's
+     * limits: more than 100 addresses in the To, Cc or Bcc list, a metadata header longer than one line (998
+     * characters), or more than 50,000,000 bytes once encoded. The reason names no address.
      *
      * @param email the email
      * @return the verdict
@@ -146,8 +158,9 @@ public final class Smtp2GoTransport implements MailTransport {
      * @param email   the email
      * @param context the attempt; its deadline shortens the timeouts
      * @return the result, with SMTP2GO's {@code email_id} as the message id
-     * @throws SendFailedException if SMTP2GO didn't take the email, couldn't be reached, or its answer can't be read;
-     *                             {@code INVALID_MESSAGE} for an email {@link #precheck(Email)} rejects
+     * @throws SendFailedException if SMTP2GO didn't take the email (also when a 200 reports it failed), couldn't be
+     *                             reached, or its answer can't be read; {@code INVALID_MESSAGE} for an email
+     *                             {@link #precheck(Email)} rejects
      * @since 0.1.0
      */
     @Override
@@ -161,7 +174,7 @@ public final class Smtp2GoTransport implements MailTransport {
             }
             HttpResponse response = engine.execute(request(email, context));
             if (!response.isSuccessful()) {
-                throw FAILURES.failure(response, context.clock());
+                throw failure(response, context);
             }
             return SendResult.builder()
                     .transportName(name)
@@ -205,7 +218,7 @@ public final class Smtp2GoTransport implements MailTransport {
                 && (email.subject().isEmpty() || email.text().isEmpty() && email.html().isEmpty())) {
             return Optional.of("without an Smtp2GoOptions template, SMTP2GO needs a subject and a text or HTML body");
         }
-        return Optional.empty();
+        return Smtp2GoLimits.problem(email);
     }
 
     private HttpRequest request(Email email, SendContext context) {
@@ -236,10 +249,31 @@ public final class Smtp2GoTransport implements MailTransport {
         return left.get().compareTo(MIN_TIMEOUT) < 0 ? MIN_TIMEOUT : left.get();
     }
 
-    /** SMTP2GO's {@code data.email_id}; a success without one can't say whether the email went out. */
+    /** SMTP2GO's error as a failure; a rate limit that says nothing about waiting gets SMTP2GO's pause. */
+    private static SendFailedException failure(HttpResponse response, SendContext context) {
+        SendFailedException failure = FAILURES.failure(response, context.clock());
+        if (failure.kind() == FailureKind.RATE_LIMITED && failure.retryAfter().isEmpty()) {
+            return failure.toBuilder().retryAfter(Smtp2GoLimits.RATE_LIMIT_PAUSE).build();
+        }
+        return failure;
+    }
+
+    /**
+     * SMTP2GO's {@code data.email_id}. A 200 can still report the email as failed, which is {@code REJECTED}; its
+     * failure messages stay out of the exception, since they may name recipients. A success without an id can't
+     * say whether the email went out.
+     */
     private static String emailId(HttpResponse response) {
-        JsonValue body = response.json();
-        Optional<String> id = body.get("data").get("email_id").asString();
+        JsonValue data = response.json().get("data");
+        long failed = Math.max(data.get("failed").asLong().orElse(0), data.get("failures").size());
+        if (failed > 0 && data.get("succeeded").asLong().orElse(0) == 0) {
+            throw SendFailedException.builder(FailureKind.REJECTED, PROVIDER_ID + " answered "
+                    + response.statusCode() + " but did not send the email (" + failed
+                    + (failed == 1 ? " failure)" : " failures)"))
+                    .statusCode(response.statusCode())
+                    .build();
+        }
+        Optional<String> id = data.get("email_id").asString();
         if (id.isEmpty() || id.get().isBlank()) {
             throw SendFailedException.builder(FailureKind.UNKNOWN_OUTCOME,
                     PROVIDER_ID + " answered " + response.statusCode() + " without an email_id")

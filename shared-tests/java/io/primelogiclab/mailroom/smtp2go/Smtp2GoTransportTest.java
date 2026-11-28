@@ -3,6 +3,7 @@ package io.primelogiclab.mailroom.smtp2go;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.primelogiclab.mailroom.Attachment;
 import io.primelogiclab.mailroom.Email;
 import io.primelogiclab.mailroom.EmailExtension;
 import io.primelogiclab.mailroom.FailureKind;
@@ -76,7 +77,7 @@ class Smtp2GoTransportTest {
 
     @Test
     void aSuccessWithoutAnEmailIdIsAnUnknownOutcome() {
-        server.enqueue(StubResponse.status(200).json("{\"data\":{\"succeeded\":0,\"failed\":1}}"));
+        server.enqueue(StubResponse.status(200).json("{\"data\":{\"succeeded\":1,\"failed\":0,\"failures\":[]}}"));
 
         assertThatThrownBy(() -> transport.send(email(), CONTEXT))
                 .isInstanceOfSatisfying(SendFailedException.class, e -> {
@@ -85,6 +86,65 @@ class Smtp2GoTransportTest {
                     assertThat(e.transportName()).hasValue("primary");
                     assertThat(e.providerId()).hasValue("smtp2go");
                 });
+    }
+
+    @Test
+    void aSuccessThatReportsTheEmailFailedIsRejectedWithoutItsMessages() {
+        server.enqueue(StubResponse.status(200).json("{\"data\":{\"succeeded\":0,\"failed\":1,"
+                + "\"failures\":[\"to@example.com: sender not verified\"]}}"));
+
+        assertThatThrownBy(() -> transport.send(email(), CONTEXT))
+                .isInstanceOfSatisfying(SendFailedException.class, e -> {
+                    assertThat(e.kind()).isEqualTo(FailureKind.REJECTED);
+                    assertThat(e.statusCode()).hasValue(200);
+                    assertThat(e.getMessage())
+                            .isEqualTo("REJECTED via primary: smtp2go answered 200 but did not send the email "
+                                    + "(1 failure)")
+                            .doesNotContain("to@example.com");
+                    assertThat(e.transportName()).hasValue("primary");
+                });
+    }
+
+    @Test
+    void failuresAloneMarkTheEmailFailed() {
+        server.enqueue(StubResponse.status(200).json("{\"data\":{\"failures\":[\"one\",\"two\"]}}"));
+
+        assertThatThrownBy(() -> transport.send(email(), CONTEXT))
+                .isInstanceOfSatisfying(SendFailedException.class, e -> {
+                    assertThat(e.kind()).isEqualTo(FailureKind.REJECTED);
+                    assertThat(e.getMessage()).endsWith("(2 failures)");
+                });
+    }
+
+    @Test
+    void aKeyWithoutTheEndpointIsAnAuthenticationFailure() {
+        server.enqueue(StubResponse.status(400).json("{\"data\":{\"error_code\":\""
+                + Smtp2GoTransport.ENDPOINT_PERMISSION_DENIED + "\",\"error\":\"no permission\"}}"));
+        server.enqueue(StubResponse.status(400).json("{\"error_code\":\"" + Smtp2GoTransport.ENDPOINT_PERMISSION_DENIED
+                + "\",\"error\":\"no permission\"}"));
+
+        for (int i = 0; i < 2; i++) {
+            assertThatThrownBy(() -> transport.send(email(), CONTEXT))
+                    .isInstanceOfSatisfying(SendFailedException.class, e -> {
+                        assertThat(e.kind()).isEqualTo(FailureKind.AUTHENTICATION);
+                        assertThat(e.providerCode()).hasValue(Smtp2GoTransport.ENDPOINT_PERMISSION_DENIED);
+                    });
+        }
+    }
+
+    @Test
+    void aRateLimitWithoutAWaitPausesForAMinute() {
+        server.enqueue(StubResponse.status(429).json("{}"));
+        server.enqueue(StubResponse.status(429).header("Retry-After", "5").json("{}"));
+
+        assertThatThrownBy(() -> transport.send(email(), CONTEXT))
+                .isInstanceOfSatisfying(SendFailedException.class, e -> {
+                    assertThat(e.kind()).isEqualTo(FailureKind.RATE_LIMITED);
+                    assertThat(e.retryAfter()).hasValue(Duration.ofMinutes(1));
+                });
+        assertThatThrownBy(() -> transport.send(email(), CONTEXT))
+                .isInstanceOfSatisfying(SendFailedException.class,
+                        e -> assertThat(e.retryAfter()).hasValue(Duration.ofSeconds(5)));
     }
 
     @Test
@@ -153,6 +213,26 @@ class Smtp2GoTransportTest {
                 .isInstanceOfSatisfying(SendFailedException.class,
                         e -> assertThat(e.kind()).isEqualTo(FailureKind.INVALID_MESSAGE));
         assertThat(server.requestCount()).isZero();
+    }
+
+    @Test
+    void anEmailOverSmtp2gosLimitsIsRejectedBeforeAnyRequest() {
+        Email cc = email().toBuilder().cc(Smtp2GoContractsTest.recipients("cc", 101)).build();
+        Email metadata = email().toBuilder().metadata("notes", Smtp2GoContractsTest.repeat('x', 970)).build();
+        Email big = email().toBuilder()
+                .attach(Attachment.of("big.bin", "application/octet-stream", new byte[38000000])).build();
+
+        assertThat(transport.precheck(cc).reason())
+                .hasValue("SMTP2GO takes at most 100 Cc recipients; this email has 101");
+        assertThat(transport.precheck(metadata).reason()).hasValue("the metadata makes a 1003-character "
+                + "X-Mailroom-Metadata header line, over the 998 one line can hold");
+        assertThat(transport.precheck(big).reason().get()).startsWith("the email is about ")
+                .endsWith(" bytes once encoded, over SMTP2GO's limit of 50000000");
+        assertThatThrownBy(() -> transport.send(cc, CONTEXT))
+                .isInstanceOfSatisfying(SendFailedException.class,
+                        e -> assertThat(e.kind()).isEqualTo(FailureKind.INVALID_MESSAGE));
+        assertThat(server.requestCount()).isZero();
+        assertThat(transport.capabilities().maxMessageSize()).hasValue(50000000L);
     }
 
     @Test
